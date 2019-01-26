@@ -7,18 +7,21 @@ import re
 
 class NovelSpider:
     def __init__(self):
-        self.url = "http://www.17k.com/list/2931242.html"  # "http://www.17k.com/chapter/2938105/36788407.html"
+        self.start_url = "http://all.17k.com/lib/book/2_0_0_0_0_0_1_0_1.html?"
+        self.url = "http://www.17k.com/list/1038316.html"  # "http://www.17k.com/chapter/2938105/36788407.html"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36"}
 
     def parse_url(self, url):
-        print(url)
         response = requests.get(url, headers=self.headers)
+        if response.status_code != 200:
+            return None
         return response.content.decode()
 
     def get_detail_page(self, html_str, index=""):
-    """获取阅读页的文本与标题
-    """
+        """
+        获取阅读页的文本与标题
+        """
         if index != "":
             index = str(index) + "."
         html_str_etree = etree.HTML(html_str)
@@ -34,7 +37,8 @@ class NovelSpider:
     # //div[@class='Main List']//h1 获取书名
     # //dl[@class='Volume']//dd/a/@href
     def get_txt_name(self, html_str):
-    """获取get网页的响应html_str
+    """
+    获取get网页的响应html_str
     """
         html_str_etree = etree.HTML(html_str)
         filename = html_str_etree.xpath("//div[@class='Main List']//h1/text()")[0] + '.txt' if len(
@@ -42,34 +46,119 @@ class NovelSpider:
         return filename
 
     def get_url_list(self, html_str):
-    """获取的 章节以及 卷
     """
+    获取的 章节以及 卷
+    """
+        item_list = []
         html_str_etree = etree.HTML(html_str)
         url_list = html_str_etree.xpath("//dl[@class='Volume']//dd/a/@href")
+        volume_list = html_str_etree.xpath("//dl[@class='Volume']")  # 获取所有的卷 并且从卷下获取所有的卷标 章节
+        for volume in volume_list:
+            item = {}
+            item['卷标'] = volume.xpath(".//span[@class='tit']/text()")[0]
+            item['info'] = volume.xpath(".//span[@class='info']/text()")[0]
+            # 获取下面的所有的a标签
+            a_list_etree = volume.xpath("./dd/a")
+            a_list = []
+            for a in a_list_etree:
+                item2 = {}
+                title2 = a.xpath(".//span[@class='ellipsis']/text()")[0].strip()
+                item2[title2] = "http://www.17k.com" + a.xpath("./@href")[0]
+                a_list.append(item2)
+            item['章节'] = a_list
+
+            item_list.append(item)
+            # 根据a标签列表获取所有章节与对应的链接
         url_list = ["http://www.17k.com" + url for url in url_list]
-        return url_list
+
+        return item_list
 
     def save_txt(self, txt_list, filename):
-        with open(filename, "a", encoding='utf8') as f:
+        """
+        保存小说
+        """
+        with open('./txt/' + filename, "a", encoding='utf8') as f:
             f.write(txt_list[0])
             for wd in txt_list[1][:-2]:
                 f.write(wd)
 
-    def run(self):
-        html_str = self.parse_url(self.url)  # 获取小说主页
-        filename = self.get_txt_name(html_str)
-        print(filename)
-        # 获取详情页的url列表
-        url_list = self.get_url_list(html_str)#更新在其中添加获取的 章节以及 卷
-        for url_detail in url_list:
-            html_detail_str = self.parse_url(url_detail)
-            index = url_list.index(url_detail)+1
-            txt_list = self.get_detail_page(html_detail_str, index=index)
-            # print(txt_list)
-            self.save_txt(txt_list, filename)
-        print("%s:保存成功" % filename)
+    def process_item_list(self, item_list, filename):  # 获取小说的章节内容并保存
+        """
+        逻辑run方法
+        """
+        for item in item_list:
+            volume_label = item['卷标']
+            volume_info = item['info']
+            item_list = item['章节']
+            lens2 = len(item_list)
+            for item in item_list:
+                for i in item:
+                    print(i)
+                    title = i
+                    html_detail_str = self.parse_url(item[i])
+                    txt_list = list(self.get_detail_page(html_detail_str))
+                    txt_list[0] = '\t\t' + title + '\n'
+                    self.save_txt(txt_list, filename)
 
+    def get_note_list(self, html_str):
+        """
+        获取小说列表页的的小说url列表
+        """
+        book_list = []
+        html_str_etree = etree.HTML(html_str)
+        detail_url_etree = html_str_etree.xpath("//tbody//tr[contains(@class,'bg')]")  # 获取了所有的tr标签
+        print("合计：",len(detail_url_etree))
+        next_url = html_str_etree.xpath("//div[@class='page']/a[contains(string(), '下一页')]/@href")[
+            0]  # 获取含有下一页的按钮的url
+        next_url = "http://all.17k.com/" + next_url if next_url != "‘javascript:void(0);" else None
+        for detail in detail_url_etree:
+            # print(etree.tostring(detail))
+            item = {}
+            item['id'] = detail.xpath(".//td[@class='td1']//text()")[0]
+            item['书名'] = detail.xpath(".//td[@class='td3']//a/text()")[0]
+            item['href'] = detail.xpath(".//td[@class='td3']//a/@href")[0]
+            item['href2'] = item['href'].replace('book', 'list')
+            item['类别'] = detail.xpath(".//td[@class='td2']//a/text()")[0]
+            item['作者'] = detail.xpath(".//td[@class='td6']//a/text()")[0]
+            item['更新章节'] = detail.xpath(".//td[@class='td4']//a/text()")[0] if len(detail.xpath(".//td[@class='td4']//a/text()"))>0 else None
+            item['字数'] = detail.xpath(".//td[@class='td5']/text()")[0]
+            item['更新时间'] = detail.xpath(".//td[@class='td7']/text()")[0].strip()
+            item['状态'] = detail.xpath(".//td[@class='td8']//em/text()")[0].strip()
+            #print(item)
+            self.save_json(item) # 保存获取的小说搜索页获取的小说列表数据
+            book_list.append(item)
+        return [book_list, next_url]
+
+    def process_book_list(self, book_list): 
+        """
+        处理小说列表页
+        """
+        for book in book_list:
+            id = book['id']
+            filename = book['书名']
+            href2 = book['href2']
+            family = book['类别']
+            author = book['作者']
+            filename = id + '-' + filename + '-' + family + '-' + author
+            html_str = self.parse_url(href2)
+            print(href2)
+            item_list = self.get_url_list(html_str)
+            self.process_item_list(item_list, filename) #处理一本小说
+    def save_json(self,item):
+        with open('info.json','a') as f:
+            f.write(json.dumps(item,ensure_ascii=0,indent=2))
+
+    def run(self,page_num=1):
+        page_num-=1
+        url_html = self.parse_url(self.start_url)
+        book_list, next_url = self.get_note_list(url_html)
+
+        #self.process_book_list(book_list)
+        if page_num>0:
+            for i in range(page_num):
+                url_html = self.parse_url(next_url)
+                book_list, next_url = self.get_note_list(url_html)
 
 if __name__ == '__main__':
     ns = NovelSpider()
-    ns.run()
+    ns.run(1000) #1000 从开始页往下爬取多少页
