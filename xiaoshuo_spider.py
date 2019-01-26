@@ -7,15 +7,15 @@ email:jgb2010start@163.com
 import requests
 from lxml import etree
 import json
-
+from settings import Settings
 
 class NovelSpider:
-    def __init__(self, start_url="http://all.17k.com/lib/book/2_0_0_0_0_0_1_0_1.html?"):
-        self.start_url = start_url
+    def __init__(self):
+        settings = Settings()
+        self.start_url = settings.start_url
         self.url = "http://www.17k.com/list/1038316.html"  # "http://www.17k.com/chapter/2938105/36788407.html"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36"}
-
+        self.headers = settings.headers
+        self.path = settings.save_path
     def parse_url(self, url):
         response = requests.get(url, headers=self.headers)
         if response.status_code != 200:
@@ -39,18 +39,18 @@ class NovelSpider:
         return title, word[:-1]
 
     def get_txt_name(self, html_str):
-    """
-    获取get网页的响应html_str
-    """
+
+        """
+        获取get网页的响应html_str
+        """
         html_str_etree = etree.HTML(html_str)
-        filename = html_str_etree.xpath("//div[@class='Main List']//h1/text()")[0] + '.txt' if len(
-            html_str_etree.xpath("//div[@class='Main List']//h1")) > 0 else "无名"
+        filename = html_str_etree.xpath("//div[@class='Main List']//h1/text()")[0] + '.txt' if len(html_str_etree.xpath("//div[@class='Main List']//h1")) > 0 else "无名"
         return filename
 
     def get_url_list(self, html_str):
-    """
-    获取的 章节以及 卷
-    """
+        """
+        获取的 章节以及 卷
+        """
         item_list = []
         html_str_etree = etree.HTML(html_str)
         url_list = html_str_etree.xpath("//dl[@class='Volume']//dd/a/@href")
@@ -79,7 +79,7 @@ class NovelSpider:
         """
         保存小说
         """
-        with open('./txt/' + filename, "a", encoding='utf8') as f:
+        with open(self.path + filename, "a", encoding='utf8') as f:
             f.write(txt_list[0])
             for wd in txt_list[1][:-2]:
                 f.write(wd)
@@ -147,7 +147,7 @@ class NovelSpider:
         """
         保存json字符串，用于存储爬取的所有小说记录
         """
-        with open('info.json', 'a') as f:
+        with open(self.path+'info.json', 'a') as f:
             f.write(json.dumps(item, ensure_ascii=0, indent=2))
 
     def run(self, page_num=1):  # page_num 输入要爬取的页面数
@@ -157,11 +157,13 @@ class NovelSpider:
         page_num -= 1  #
         url_html = self.parse_url(self.start_url)
         book_list, next_url = self.get_note_list(url_html)
+        self.process_book_list(book_list)
         if page_num > 0:
             for i in range(page_num):
                 url_html = self.parse_url(next_url)
                 book_list, next_url = self.get_note_list(url_html)
+                print(book_list)
 
 if __name__ == '__main__':
-    ns = NovelSpider()  # 输入start_url要爬取的网页
-    ns.run(1000) #run方法输入要爬取多少页
+    ns = NovelSpider()  # 将要爬取得需要的信息归类到settings文件中
+    ns.run(1) #run方法输入要爬取多少页
